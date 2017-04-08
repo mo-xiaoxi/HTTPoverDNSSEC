@@ -25,6 +25,9 @@ class Server(object):
 		self.timeout = TIMEOUT
 
 	def start_dns_server(self):
+		'''
+		监听DNS端口
+		'''
 		dns_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		dns_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		dns_server.bind(self.ludp_addr)
@@ -33,6 +36,9 @@ class Server(object):
 
 
 	def dns2http(self):
+		pass
+
+	def main_loop(self):
 		try:
 			self.dns_server = self.start_dns_server()
 			while True:
@@ -53,6 +59,9 @@ class Server(object):
 		return data
 
 	def handler(self,data,addr):
+		'''
+		收到DNS数据后，进行处理请求，并将数据回发给客户
+		'''
 		print data,addr
 		method,path,protocol = self.get_header(data)
 		print path
@@ -86,7 +95,7 @@ class Server(object):
 
 def start_server():
 	server = Server(LUDP_ADDR)
-	server.dns2http()
+	server.main_loop()
 
 if __name__ == '__main__':
 	start_server()

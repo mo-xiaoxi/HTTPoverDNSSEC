@@ -30,6 +30,7 @@ class Client(object):
 
 	def dns_client(self):
 		'''
+		初始化生成一个UDP Socket
 		'''
 		dns_udp_client = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
 		dns_udp_client.settimeout(self.timeout)
@@ -37,6 +38,9 @@ class Client(object):
 		return dns_udp_client,self.rudp_addr
 
 	def start_http_proxy(self):
+		'''
+		初始化TCP socket 用于作为本地HTTP代理
+		'''
 		proxy = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		proxy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		try:
@@ -50,6 +54,9 @@ class Client(object):
 			logging.error(e)
 
 	def handler(self,connection,address):
+		'''
+		处理HTTP over DNS的主要逻辑
+		'''
 		reSendCount = 0
 		recvdata = ''
 		header = self.get_header(connection)
@@ -59,7 +66,7 @@ class Client(object):
 			try:
 				recv,address = dns_udp_client.recvfrom(BUFSIZE)
 				recvdata += recv
-				if recv.find("DNSEND")!=-1:
+				if recv.find(END_FLAG)!=-1:
 					recvdata = recvdata[:-6]
 					response = self.decode(recvdata)
 					connection.send(response)
@@ -87,19 +94,16 @@ class Client(object):
 			if end!=-1:
 				break
 		header = (data[:end+1]).split()
-		if header[2].find('HTTP') == -1:
+		if header[2].find('HTTPS') != -1:
 			logging.error("NOT HTTP!!!")
 		data = data[:end+1] #just for debug
-		# data = data[end+1:]
-		# first = data.find('Host:')
-		# end = data.find('\n')
-		# print data[first+5:end]
-		# header[1] = 'http://'+data[first+6:end-1]+header[1]
-		# data = ' '.join(header)
-		print data
+		logging.info("HTTP:{0}".format(data))
 		return data
 
 	def http2dns(self):
+		pass
+
+	def main_loop(self):
 		try:
 			self.proxy = self.start_http_proxy()
 			while True:
@@ -117,7 +121,7 @@ class Client(object):
 
 def start_client():
 	client = Client(LTCP_ADDR,RUDP_ADDR)
-	client.http2dns()
+	client.main_loop()
 
 if __name__ == '__main__':
 	start_client()
