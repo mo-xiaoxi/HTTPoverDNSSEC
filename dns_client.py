@@ -6,6 +6,7 @@ import socket
 import logging
 import threading
 import base64
+import dns.resolver
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,15 +19,20 @@ RUDP_ADDR = ('106.14.61.185',1234)
 MAX_RESEND_COUNT = 10
 END_FLAG = 'DNSEND'
 TUNNEL_DOMAIN = 'xiaoxi.wanmitech.com'
+NAMESERVER = '8.8.8.8'
 
 class Client(object):
-	def __init__(self,ltcp_addr,rudp_addr,topdomain,timeout=2):
+	def __init__(self,ltcp_addr,rudp_addr,topdomain,nameservers=NAMESERVER,dnstype='TXT',timeout=2):
 		self.ltcp_addr = ltcp_addr
 		self.rudp_addr = rudp_addr
 		self.proxy_buffer = ''
 		self.running = True
-		self.timeout = timeout
 		self.topdomain = topdomain
+		self.resolver = dns.resolver.Resolver()
+		self.nameservers = nameservers
+		self.resolver.nameservers = [nameservers]
+		self.dnstype = dnstype
+		self.timeout = timeout
 
 
 	def dns_client(self):
@@ -58,50 +64,46 @@ class Client(object):
 		'''
 		处理HTTP over DNS的主要逻辑
 		'''
-		reSendCount = 0
-		recvdata = ''
-		header = self.get_header(connection)
-		dns_udp_client ,dns_remote_addr = self.dns_client()
-		dns_udp_client.sendto(header,dns_remote_addr)
+		http_header = self.get_header(connection)
+		hostname = self.build_hostname(http_header,self.topdomain)
+		count = 0 #尝试用count.域名的方式 进行多个域名请求 完成大网站的访问
+		hostname = self.build_hostname(http_header,self.topdomain)
 		while True:
-			try:
-				recv,address = dns_udp_client.recvfrom(BUFSIZE)
-				recvdata += recv
-				if recv.find(END_FLAG)!=-1:
-					recvdata = recvdata[:-6]
-					response = self.decode(recvdata)
-					connection.send(response)
-					return  True
-			except socket.timeout:
-				logging.info("Timeout, Send again!")
-				dns_udp_client.sendto(header,dns_remote_addr)
-				reSendCount += 1
-				if reSendCount > MAX_RESEND_COUNT:
-					logging.error("Failed to send !something erorr ! please check the system !")
-					return False
-			except socket.error as msg:
-				logging.error(msg)
-			except Exception, e:
-				logging.error(e)
+			answers = self.resolver.query(hostname,self.dnstype)
+			logging.info("DNS answer :{0}".format(answers))
+			response = ''
+			for rdata in answers:
+				response += str(rdata)
+			print response
+			if response.find(END_FLAG)!=-1:
+				response = response[:-6]
+				response = self.decode(response)
+				connection.send(response)
+				break
+		return True
+
+
+	def encode(self,content):
+		return self.base64u_encode(content)
 
 	def decode(self,recv):
 		return self.base64u_decode(recv)
 
-	def base64u_decode(self,recv):
-		'''base64解码，=被舍去,+替换成_'''
-		l = len(recv)%4
-		tmp = recv+l*'='
-		tmp = tmp.replace('_','+')
-		tmp = tmp.replace('-','/')
-		print 'base64decodebefore:',tmp
-		tmp = base64.b64decode(tmp)
-		return tmp
-
 	def base64u_encode(self,content):
+		'''base64编码，=被舍去,+替换成_,/替换成-'''
 		tmp = base64.b64encode(content)
 		tmp = tmp.rstrip('=')
 		tmp = tmp.replace('+','_')
 		tmp = tmp.replace('/','-')
+		return tmp
+
+	def base64u_decode(self,recv):
+		'''base64解码，=补上,_替换成+,-替换成/'''
+		l = len(recv)%4
+		tmp = recv+l*'='
+		tmp = tmp.replace('_','+')
+		tmp = tmp.replace('-','/')
+		tmp = base64.b64decode(tmp)
 		return tmp
 	
 	def get_header(self,connection):
@@ -118,13 +120,9 @@ class Client(object):
 		logging.info("HTTP:{0}".format(data))
 		return data
 
-	def http2dns(self):
-		pass
-
-
 	def build_hostname(self,data,topdomain,maxlen=0xFF):
 		space = maxlen - len(topdomain)-3 # 1 dot before topdomain 2 saftey
-		buf = encode(data)
+		buf = self.encode(data)
 		l = len(buf)+len(buf)/64
 		if l > space:
 			print 'data is too long!'
