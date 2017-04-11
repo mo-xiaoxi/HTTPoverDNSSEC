@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
-'''
+__Author__ = 'moxiaoxi'
+"""
 本文件主要完成各类编码工作
-'''
-import base64
-BASE64U = 'base64u'
+"""
 
+import base64
+
+BASE64U = 'base64u'
 
 def encode(src,baseType = BASE64U):
     if baseType == BASE64U:
@@ -62,5 +64,16 @@ def parse_hostname(data,topdomain,baseType = BASE64U):
     buf = decode(tmp,baseType)
     while True:
         yield buf,index
+
+def parse_flag(flag):
+    string = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-"
+    return string.find(flag)
+
+def build_flag(count):
+    string = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-"
+    return string[count]
+
+
+
 
 

@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 # encoding: utf-8
+__Author__ = 'moxiaoxi'
 
 import socket
 import logging
 import threading
 import requests
 import base64
+import hashlib
 from dnslib import DNSRecord,QTYPE,DNSHeader,RR,TXT
 from  encoding import *
 
@@ -17,22 +19,21 @@ logging.basicConfig(
 LUDP_ADDR = ('0.0.0.0',53)
 TIMEOUT = 20
 MAX_RESEND_COUNT = 10
-END_FLAG = 'DNSEND'
 BUFSIZE = 255
 DNSBUF = 1024
+
 
 class DNSPacket(object):
 	def __init__(self,response,TTL=100,DNSsize=255,UDPsize=1472):
 		self.TTL = TTL
 		self.response = response
-		self.length = len(response)
-		self.offset = 0
 		self.DNSsize = DNSsize
 		self.UDPsize = UDPsize
 		self.UDPpacket = []
 
 	def GetDNSreply(self,request,index):
 		if (index >= len(self.UDPpacket)):
+			logging.warning("Cache out of index:{0}".format(index))
 			index = len(self.UDPpacket)-1 #防止最后一个数据包丢失导致的越界问题
 		reply = DNSRecord(DNSHeader(id=request.header.id, qr=1, aa=1, ra=1), q=request.q)
 		for i in range(len(self.UDPpacket[index])):
@@ -41,23 +42,32 @@ class DNSPacket(object):
 		return reply.pack()
 
 	def makereply(self):
-		response = self.response+END_FLAG
+		response = self.response
 		l = len(response)
 		base = self.UDPsize/self.DNSsize
 		DNScount = l/self.DNSsize + 1
 		UDPcount = DNScount/base+1
+		tmplen = self.DNSsize-32-1-1#32位的哈希 1位的cmdflag表示一共有多少UDP包 1位表示index
+		flag = UDPcount
 		i = 0
 		for j in range(1,UDPcount+1):
 			oneUDPpacket = []
 			while i < base*j:
-				if(self.DNSsize*i>l):
+				if(tmplen*i>l):
 					break
-				DNSpacket = response[self.DNSsize*i:self.DNSsize*(i+1)]
+				tmp = response[tmplen*i:tmplen*(i+1)]
+				tmp = build_flag(flag)+build_flag(j-1)+tmp
+				hash_md5 = hashlib.md5(tmp).hexdigest()
+				DNSpacket = hash_md5 + tmp
 				oneUDPpacket.append(DNSpacket)
 				i += 1
 			self.UDPpacket.append(oneUDPpacket)
-		print len(self.UDPpacket)
-# 	def send
+		# logging.debug("UDPacket:")
+		# index = 0
+		# for packet in self.UDPpacket:
+		# 	logging.debug("{0}:{1}".format(index,packet))
+		# 	index += 1
+
 
 
 class Server(object):
@@ -109,9 +119,8 @@ class Server(object):
 			DNSreply = DNSPacket(response)
 			DNSreply.makereply()
 			self.DNS_Cache[path]= DNSreply
-			reply = DNSreply.GetDNSreply(request,index)
-			print len(reply)
-			logging.debug("No Cache reply:{0}".format(index))
+			reply = DNSreply.GetDNSreply(request,index)			
+			logging.debug("Not Cache reply:{0}".format(index))
 			self.dns_server.sendto(reply,addr)
 		return True
 
